@@ -52,7 +52,7 @@
 
 					<Card
 						title="Charging Plan"
-						subtitle="kW"
+						:subtitle="chargingPlanSubtitle"
 						edge-to-edge
 						class="box-pull-out mb-4"
 					>
@@ -330,6 +330,11 @@ export default defineComponent({
 				...entries.filter((e) => e.type === "vehicle"),
 				...entries.filter((e) => e.type === "battery"),
 			];
+		},
+		// the chart adds a grid price axis when the request carries prices
+		chargingPlanSubtitle(): string {
+			if (!this.evopt?.req.time_series.p_N?.length) return "kW";
+			return `kW ・ ${this.pricePerKWhUnit(this.currency)}`;
 		},
 		timeSeriesSubtitle(): string {
 			return `${this.evopt?.req.time_series.dt.length || 0} steps ・ ${this.horizonHours} h horizon`;
