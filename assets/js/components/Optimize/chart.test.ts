@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vite-plus/test";
-import { dayBoundarySeries, isMidnight, slotParents, slotXAxis, splitSlots } from "./chart";
+import {
+  dayBoundarySeries,
+  isMidnight,
+  repeatSlots,
+  slotParents,
+  slotXAxis,
+  splitSlots,
+} from "./chart";
 
 // 15min slots starting at the given local hour
 function times(startHour: number, count: number): number[] {
@@ -46,5 +53,20 @@ describe("splitSlots", () => {
   test("shares energy evenly, power per slot unchanged", () => {
     expect(splitSlots([7, 10, 400, 100], parents)).toEqual([7, 10, 100, 100, 100, 100, 50, 50]);
     expect(splitSlots([], parents)).toEqual([]);
+  });
+});
+
+describe("repeatSlots", () => {
+  const parents = slotParents([420, 900, 3600, 1800]);
+
+  test("repeats a price over the quarters of its slot", () => {
+    expect(repeatSlots([0.3, 0.25, 0.2, 0.4], parents)).toEqual([
+      0.3, 0.25, 0.2, 0.2, 0.2, 0.2, 0.4, 0.4,
+    ]);
+  });
+
+  test("leaves gaps for missing values", () => {
+    expect(repeatSlots([], parents)).toEqual([]);
+    expect(repeatSlots([0.3, 0.25], parents).slice(2)).toEqual(Array(6).fill(null));
   });
 });

@@ -1,6 +1,7 @@
 import ChargeChart from "./ChargeChart.vue";
 import Card from "../Helper/Card.vue";
 import type { Meta, StoryFn } from "@storybook/vue3";
+import { CURRENCY } from "@/types/evcc";
 import {
   batteryColors,
   batteryDetails,
@@ -26,6 +27,7 @@ const base = {
   batteryColors,
   demandColors,
   timestamp: timestamps[0],
+  currency: CURRENCY.EUR,
 };
 
 const Template: StoryFn<typeof ChargeChart> = (args) => ({
@@ -55,3 +57,9 @@ HeatingAndUnmodelled.args = {
   evopt: evopt([home, carport, heatPump]),
   demandDetails: [home, carport, heatPump],
 };
+
+// no grid price in the request, no price line and axis
+const withoutPrice = evopt([home]);
+withoutPrice.req.time_series.p_N = [];
+export const WithoutPrice = Template.bind({});
+WithoutPrice.args = { ...base, evopt: withoutPrice, demandDetails: [] };

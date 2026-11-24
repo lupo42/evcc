@@ -74,6 +74,12 @@ export function splitSlots(values: number[], parents: number[]): number[] {
   return parents.map((p) => (values[p] ?? 0) / (count[p] ?? 1));
 }
 
+// values per chart slot, a split slot repeats its value in every quarter: prices hold per slot
+export function repeatSlots(values: number[], parents: number[]): (number | null)[] {
+  if (!values.length) return [];
+  return parents.map((p) => values[p] ?? null);
+}
+
 export function formatSlotRange(times: number[], dt: number[], index: number): string {
   const start = new Date(times[index] ?? 0);
   const end = new Date(start.getTime() + (dt[index] || 0) * 1000);

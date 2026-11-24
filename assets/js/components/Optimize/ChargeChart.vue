@@ -19,7 +19,7 @@ import {
 	lineDefaults,
 } from "../Forecast/echarts";
 import type { EvoptData } from "./TimeSeriesDataTable.vue";
-import type { BatteryDetail, DemandDetail, DeviceColors } from "@/types/evcc";
+import { CURRENCY, type BatteryDetail, type DemandDetail, type DeviceColors } from "@/types/evcc";
 import formatter, { POWER_UNIT } from "@/mixins/formatter";
 import echartsChart from "@/mixins/echartsChart";
 import colors from "@/colors";
@@ -31,6 +31,7 @@ import {
 	slotXAxis,
 	slotParents,
 	splitSlots,
+	repeatSlots,
 	dayBoundarySeries,
 	formatSlotRange,
 	whToKW,
@@ -41,6 +42,7 @@ import {
 
 const GRID_LABEL = "Grid Power";
 const SOLAR_LABEL = "Solar Forecast";
+const PRICE_LABEL = "Grid Price";
 
 // one stacked bar series, data in kW
 interface StackEntry {
@@ -80,6 +82,7 @@ export default defineComponent({
 			default: () => [],
 		},
 		deviceColors: { type: Object as PropType<DeviceColors>, default: () => ({}) },
+		currency: { type: String as PropType<CURRENCY>, default: CURRENCY.EUR },
 	},
 	computed: {
 		consumptionLabel(): string {
@@ -125,11 +128,21 @@ export default defineComponent({
 				return importKW > 0 ? importKW : -exportKW;
 			});
 		},
+		// grid import price per kWh, the request carries it per Wh
+		gridPrice(): (number | null)[] {
+			const perWh = repeatSlots(this.evopt.req.time_series.p_N || [], this.parents);
+			return perWh.map((p) => (p === null ? null : p * 1000));
+		},
+		hasPrice(): boolean {
+			return this.gridPrice.some((p) => p !== null);
+		},
 		// series values are kW, the shared scale works in W
 		axisScale(): EnergyAxisScale {
 			const peak = Math.max(
 				0,
-				...this.chartSeries.flatMap((s) => (s["data"] as number[]).map(Math.abs))
+				...this.chartSeries
+					.filter((s) => s["yAxisIndex"] === undefined)
+					.flatMap((s) => (s["data"] as number[]).map(Math.abs))
 			);
 			return energyAxisScale(peak * 1000);
 		},
@@ -158,6 +171,7 @@ export default defineComponent({
 				grid,
 				lineCasing(solar, 3),
 				solar,
+				...this.priceSeries,
 				...this.stackEntries.map((e) => ({
 					name: e.label,
 					type: "bar",
@@ -173,11 +187,64 @@ export default defineComponent({
 			];
 			return series;
 		},
+		priceSeries(): Record<string, unknown>[] {
+			if (!this.hasPrice) return [];
+			const price = {
+				name: PRICE_LABEL,
+				type: "line",
+				yAxisIndex: 1,
+				z: 4,
+				data: this.gridPrice,
+				// a price holds for its whole slot, steps sit on the slot boundaries
+				step: "middle",
+				...transientHoverDot(colors.price || ""),
+				lineStyle: { color: colors.price || "", ...lineDefaults },
+			};
+			return [lineCasing(price, 3), price];
+		},
+		powerYAxis(): Record<string, unknown> {
+			return forecastYAxis({
+				min: undefined,
+				position: "right",
+				// the day boundary value axis contains 0, keep the axis on the right
+				axisLine: { show: false, onZero: false },
+				splitNumber: 5,
+				name: this.axisScale.unit,
+				...axisNameStyle(),
+				axisLabel: {
+					color: colors.muted || "",
+					formatter: (v: number) =>
+						this.fmtW(v * 1000, this.axisScale.unit, false, this.axisScale.digits),
+				},
+			});
+		},
+		priceYAxis(): Record<string, unknown> {
+			return forecastYAxis({
+				min: undefined,
+				scale: true,
+				position: "left",
+				axisLine: { show: false, onZero: false },
+				splitLine: { show: false },
+				splitNumber: 3,
+				name: this.pricePerKWhUnit(this.currency, true),
+				...axisNameStyle("left"),
+				axisLabel: {
+					color: colors.muted || "",
+					formatter: (v: number) => this.fmtPricePerKWh(v, this.currency, true, false),
+				},
+			});
+		},
 		chartOption(): Record<string, unknown> {
 			return {
 				animation: false,
 				textStyle: { fontFamily: FONT_FAMILY },
-				grid: { top: 28, right: 36, bottom: 34, left: 0, borderWidth: 0 },
+				grid: {
+					top: 28,
+					right: 36,
+					bottom: 34,
+					left: this.hasPrice ? 36 : 0,
+					borderWidth: 0,
+				},
 				tooltip: {
 					trigger: "axis",
 					axisPointer: {
@@ -188,27 +255,19 @@ export default defineComponent({
 					formatter: this.tooltipFormatter,
 				},
 				xAxis: [slotXAxis(this.times, this.weekdayShort), boundaryAxis(this.times.length)],
-				yAxis: forecastYAxis({
-					min: undefined,
-					position: "right",
-					// the day boundary value axis contains 0, keep the axis on the right
-					axisLine: { show: false, onZero: false },
-					splitNumber: 5,
-					name: this.axisScale.unit,
-					...axisNameStyle(),
-					axisLabel: {
-						color: colors.muted || "",
-						formatter: (v: number) =>
-							this.fmtW(v * 1000, this.axisScale.unit, false, this.axisScale.digits),
-					},
-				}),
+				yAxis: [this.powerYAxis, ...(this.hasPrice ? [this.priceYAxis] : [])],
 				series: this.chartSeries,
 			};
+		},
+		priceLegends(): Legend[] {
+			if (!this.hasPrice) return [];
+			return [{ label: PRICE_LABEL, color: colors.price || "", value: "", type: "line" }];
 		},
 		legends(): Legend[] {
 			const legends: Legend[] = [
 				{ label: GRID_LABEL, color: colors.grid || "", value: "", type: "line" },
 				{ label: SOLAR_LABEL, color: colors.forecast || "", value: "", type: "line" },
+				...this.priceLegends,
 				...this.stackEntries.map((e) => ({
 					label: e.label,
 					color: e.color,
@@ -262,6 +321,10 @@ export default defineComponent({
 				.filter((p) => !p.seriesName?.endsWith("-casing"))
 				.map((p) => {
 					const value = p.value as number;
+					if (p.seriesName === PRICE_LABEL) {
+						const price = this.fmtPricePerKWh(value, this.currency);
+						return { name: p.seriesName, values: [price] };
+					}
 					if (p.seriesName === GRID_LABEL) {
 						const name = value > 0 ? "Grid Import" : value < 0 ? "Grid Export" : "Grid";
 						return { name, values: [this.formatValue(Math.abs(value))] };
