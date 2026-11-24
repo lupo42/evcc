@@ -64,6 +64,7 @@
 							:timestamp="evopt.details.timestamp[0]"
 							:battery-colors="batteryColors"
 							:device-colors="deviceColors"
+							:currency="currency"
 						/>
 					</Card>
 
